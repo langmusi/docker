@@ -1,0 +1,316 @@
+---
+title: "Teknisk Statusrapport Fordon"
+output:
+  word_document
+    
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE, fig.width=6, fig.height=5)
+
+# list.of.packages <- c("tidyr", "lubridate", "stringr", "data.table", "readr",  "stats", "broom","ggplot2", "RColorBrewer","knitr","markdown", "rmarkdown", "vctrs")
+# lapply(list.of.packages, library, character.only = TRUE)
+
+# list.of.uninstalled.packages <- c( "gtools", "viridis", "ggsci")
+# new.packages <- list.of.uninstalled.packages[ !(list.of.uninstalled.packages %in% installed.packages()[,"Package"])]
+# if(length(new.packages)) install.packages(new.packages, repos = "http://cran.us.r-project.org")
+# lapply(list.of.uninstalled.packages, library, character.only = TRUE)
+
+# Old 100 000km computation is used in this RMD
+```
+
+
+
+```{r fordonstype list, include=FALSE}
+# Create a list of Fordonstyp so that in the following subsets we can use number instead of names
+fordontype_list <- c('CORADIA', 'DOSTO', 'ITINO', 'REGINA', 'X11-X14')
+
+#out_width <- "100%"
+```
+
+
+
+```{r functions, include=FALSE}
+library(dplyr)
+library(ggplot2)
+
+
+options(scipen=1, digits=2, knitr.kable.NA = "")
+
+knitr::opts_chunk$set(comment = NA) # to remove all hashes
+
+mycolors <- c("#005A84", "#A7A9AC", "#00A2DB", "#58595B", "#8ED8F8",  
+              "#00ACA1", "#E31C79", "#000000")
+
+# To read in functions that are saved in another .R file
+# source("./Functions_MR.R", encoding="utf-8")
+# Function to group X11-x14 and add trains = ER1 to Dosto
+createDf_fordon <- function(df) {
+  # error checking: in case we have the column names in different format (capitle, low-cased)
+  col_names <- as.vector(colnames(df))
+  
+  df$FordonsTyp <- as.character(df$FordonsTyp)
+  df$FordonsTyp[grepl('^X', df$FordonsTyp) == TRUE] <- 'X11-X14'
+    
+  
+  # the known fordonstyp (default)
+  fordontype_list <- c('CORADIA', 'DOSTO', 'ITINO', 'REGINA', 'X11-X14')
+  
+  if (setequal(unique(df$FordonsTyp), fordontype_list)) {
+    
+    if ('littera' %in% col_names ) {
+      
+      # add into Dosto
+      df$littera <- as.character(df$littera)
+      df$FordonsTyp <- if_else(df$littera == 'ER1', 'DOSTO', df$FordonsTyp)
+      
+    } else if(any(str_detect(col_names, "Littera"))) {
+      
+      df <- rename(df, 'littera' = 'Littera')  # littera - new name, Littera - old name 
+      # add into Dosto
+      df$littera <- as.character(df$littera)
+      df$FordonsTyp <- if_else(df$littera == 'ER1', 'DOSTO', df$FordonsTyp)
+    }
+  }
+  
+  
+  if ("DefectDateAndTime" %in% col_names) {
+    
+    # convert to date
+    df$DefectDateAndTime <- as.Date(df$DefectDateAndTime)
+    
+  }
+
+  return(df)
+  
+}
+
+
+open_group <- function(mydat) {
+  
+  mydat <- mydat %>% 
+    group_by(Month, Defectnumber) %>%
+    mutate(UniqueCount = n_distinct(Defectnumber)) %>% filter(dt == max(dt)) 
+    
+}
+
+open_warranty_plot <- function(data1, data2, index) {
+  
+  unique_trainset_total_num <- length(unique(d_vehicle$TrainsetVehicleNumber))
+  
+  ggplot() +     
+    geom_bar(data = data1, aes(x = Month, 
+                               y = UniqueCount/unique_trainset_total_num,  # normalizing
+                               fill = OpenInterval), stat = 'identity') +
+    geom_point(data = data2, aes(x = Month, 
+                                 y = my_freq/unique_trainset_total_num, 
+                                 group = 1), alpha = 0) + 
+    geom_line(data = t, aes(x = Month, 
+                               y = my_freq/unique_trainset_total_num,
+                               colour = 'my_freq',
+                               group = 1), 
+                 #pline_shape = -0.1, 
+                 linetype="dashed", size = 1.05, open = TRUE, rep_ends=TRUE) + 
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +
+    scale_colour_manual(name = "Garantiskador", values = c("my_freq" = "black"), labels = NULL) +
+    scale_fill_manual("", values = mycolors) +
+    labs(x = 'MÃ¥nad', y = 'Antal skador per fordon', 
+                      title = "Antal Ã¶ppna skador per fordon fÃ¤rgat efter tidsintervall",
+                      caption = fordontype_list[index]) 
+
+}
+```
+
+
+```{r reading data, include=FALSE}
+
+# To read in functions that are saved in another .R file
+# source("./Functions_MR.R", encoding="utf-8")
+#source("./R/Functions_MR.R", encoding="utf-8")
+
+df_1 <- read.csv2("/R/nitesh.csv", sep = ";")
+```
+
+
+<br/>
+
+<br/>  
+
+**Nyckeltal, informationsklass, lätt/tungt underhåll är definierat i bilaga.**
+
+<br/>
+<br/>
+
+## Nyckeltal: Antal öppna skador normerat (snitt per fordon) färgat efter tidsintervall (Eftersläpande avhjälpande underhåll)
+
+
+```{r Import and prepare data, include = FALSE}
+# Group to X11-14 from variable 'fordontyp'
+# Add Dosto
+df <- createDf_fordon(df_1)
+
+# dt - group by variable
+# Convert to date type
+df$dt <- as.Date(df$dt)
+# Aggregate daily data to month
+df$Month <- format(df$dt, "%Y-%m")
+```
+
+
+
+Graferna nedan visar antalet skador som varit öppen någon gång under aktuell månad. De öppna skadorna färgas efter hur länge de varit öppna, och kategoriseras enligt kortare än två veckor, två veckor till en månad, en månad till ett kvartal och ett kvartal eller äldre. 
+
+
+```{r, include=FALSE}
+# Create open intervals
+df <- df %>% group_by(Defectnumber, Month) %>% 
+  mutate(OpenInterval = ifelse((max(dt) - min(DefectDateAndTime) < 14), '< 2v', 
+                               ifelse(((max(dt) - min(DefectDateAndTime) >= 14) & (max(dt) - min(DefectDateAndTime) < 30)), '2v - 1 månad',
+                                      ifelse(((max(dt) - min(DefectDateAndTime) >= 30) & (max(dt) - min(DefectDateAndTime) < 90)), '1 månad - 1 kvartal',
+                                             'Kvartal -'))))
+
+# reordering the levels of OpenInterval in order to show the expected order in the graph
+df$OpenInterval <- factor(df$OpenInterval, levels = c('< 2v',
+                                                        '2v - 1 månad',
+                                                        '1 månad - 1 kvartal',
+                                                        'Kvartal -'))
+
+```
+
+
+<br/>  
+<br/>
+
+### Coradia
+
+```{r, include = FALSE}
+# Subset data by fordonstyp
+d_vehicle <- subset(df, FordonsTyp == fordontype_list[1])
+
+d <- open_group(mydat = d_vehicle)
+
+# defects that are garantine
+t <- d %>% filter(warranty == 1) %>% 
+  group_by(Month) %>% summarise(my_freq = sum(UniqueCount))
+
+```
+
+
+```{r open warranty fig 1}
+# per trainset
+open_warranty_plot(data1 = d, data2 = t, index = 1)
+```
+
+
+<br/>  
+<br/>  
+<br/>
+
+### Dosto
+
+
+```{r, include=FALSE}
+# Subset data by fordonstyp
+d_vehicle <- subset(df, FordonsTyp == fordontype_list[2])
+
+d <- open_group(mydat = d_vehicle)
+
+# defects that are garantined
+t <- d %>% filter(warranty == 1) %>% 
+  group_by(Month) %>% summarise(my_freq = sum(UniqueCount))
+```
+
+
+```{r open warranty fig 2}
+# per trainset
+
+open_warranty_plot(data1 = d, data2 = t, index = 2)
+
+```
+
+<br/>  
+<br/>  
+<br/>
+
+### Itino
+
+
+```{r, include=FALSE}
+# Subset data by fordonstyp
+d_vehicle <- subset(df, FordonsTyp == fordontype_list[3])
+
+d <- open_group(mydat = d_vehicle)
+
+# defects that are garantined
+t <- d %>% filter(warranty == 1) %>% 
+  group_by(Month) %>% summarise(my_freq = sum(UniqueCount))
+```
+
+
+```{r open warranty fig 3}
+# per trainset
+
+open_warranty_plot(d, t, 3)
+
+```
+
+<br/>  
+<br/>  
+<br/>
+
+### Regina
+
+
+```{r, include=FALSE}
+# Subset data by fordonstyp
+d_vehicle <- subset(df, FordonsTyp == fordontype_list[4])
+
+d <- open_group(mydat = d_vehicle)
+
+# defects that are garantined
+t <- d %>% filter(warranty == 1) %>% 
+  group_by(Month) %>% summarise(my_freq = sum(UniqueCount))
+
+if (nrow(t) == 0) {
+  t <- d %>% group_by(Month) %>% summarise(my_freq = 0)
+} 
+```
+
+
+```{r open warranty fig}
+# per trainset
+
+open_warranty_plot(d, t, 4)
+
+```
+
+<br/>  
+<br/>  
+<br/>
+
+### X11-X14
+
+
+```{r, include=FALSE}
+# Subset data by fordonstyp
+d_vehicle <- subset(df, FordonsTyp == fordontype_list[5])
+
+d <- open_group(mydat = d_vehicle)
+
+# defects that are garantined
+t <- d %>% filter(warranty == 1) %>% 
+  group_by(Month) %>% summarise(my_freq = sum(UniqueCount))
+```
+
+
+```{r open warranty fig 4}
+# per trainset
+
+open_warranty_plot(d, t, 5)
+```
+
+
+<br/>  
+<br/>  
+<br/>
+
