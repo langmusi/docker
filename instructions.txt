@@ -1,0 +1,13 @@
+# copy the files from the container to the local host
+# https://stackoverflow.com/questions/22049212/docker-copying-files-from-docker-container-to-host
+docker cp wheel-pred:/hjulanalys/output/pred_output.csv .
+
+# 2021-09-26: How to share docker image with the others?	https://www.cloudsavvyit.com/12326/how-to-share-docker-images-with-others/
+# Exporting images : docker save my-image:latest > my-image.tar 	
+# run the exported images: docker load < my-image.tar  		
+# docker export my-container > my-container.tar  -> exporting a container	
+
+# 2021-09-26: Updating a Docker container with new code  --- If python codes change, how to update a container?
+Rebuilding your image when your code changes is the canonical approach, and is not wasteful at all if done right.
+Your pythonApp code should be COPY'd into your image as the final step (rule of thumb: most frequently changed step in dockerfile should go last). 
+This means rebuilding will be very fast as all other steps will be cached. 	https://stackoverflow.com/questions/52172970/updating-a-docker-container-with-new-code
